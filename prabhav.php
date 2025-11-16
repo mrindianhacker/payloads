@@ -1,6 +1,6 @@
 <?php
     // Include your database connection file
-    include_once $_SERVER['DOCUMENT_ROOT'] . "/include/z_db2.php";
+    include_once $_SERVER['DOCUMENT_ROOT'] . "/home1/prabhfwl/public_html/include/z_db2.php";
 
     // A simple whitelist function to avoid SQL injection in table/DB names
     function validate_name($name) {
