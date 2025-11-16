@@ -37,7 +37,7 @@ function valid_identifier($s) {
     return is_string($s) && preg_match('/^[A-Za-z0-9_]+$/', $s);
 }
 
-$dbName    = $_GET['db']    ?? '';
+$dbName = $_GET['db'] ?? 'prabhfwl_avadprab_prabhavlagnam';
 $tableName = $_GET['table'] ?? '';
 $error     = '';
 $result    = null;
