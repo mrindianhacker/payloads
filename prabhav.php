@@ -1,89 +1,152 @@
 <?php
-    // Include your database connection file
-    include_once $_SERVER['DOCUMENT_ROOT'] . "/home1/prabhfwl/public_html/include/z_db2.php";
+// DEBUG: show errors (remove or tone down in production)
+ini_set('display_errors', 1);
+ini_set('display_startup_errors', 1);
+error_reporting(E_ALL);
 
-    // A simple whitelist function to avoid SQL injection in table/DB names
-    function validate_name($name) {
-        return preg_match('/^[a-zA-Z0-9_]+$/', $name);
+// Try to include your connection file from several likely locations
+$includeCandidates = [
+    __DIR__ . "/include/z_db2.php",                     // same dir/include
+    __DIR__ . "/../include/z_db2.php",                  // one level up
+    $_SERVER['DOCUMENT_ROOT'] . "/include/z_db2.php",   // web root include/
+    "/var/www/html/include/z_db2.php"                   // common apache path (adjust if needed)
+];
+
+$included = false;
+foreach ($includeCandidates as $candidate) {
+    if (file_exists($candidate)) {
+        include_once $candidate;
+        $included = true;
+        break;
     }
+}
 
-    $dbName     = $_GET['db'] ?? null;
-    $tableName  = $_GET['table'] ?? null;
-    $error      = "";
+if (!$included) {
+    // helpful debug message
+    die("<strong>Include error:</strong> Could not find include/z_db2.php. Tried: <br>"
+        . implode("<br>", array_map('htmlspecialchars', $includeCandidates)));
+}
 
-    if ($dbName && $tableName) {
-        
-        // Validate DB and table names
-        if (!validate_name($dbName) || !validate_name($tableName)) {
-            $error = "Invalid database or table name.";
+// Expect $link (mysqli) to be provided by z_db2.php
+if (!isset($link) || !($link instanceof mysqli)) {
+    die("<strong>Connection error:</strong> \$link is not set or not a mysqli instance. Check include/z_db2.php");
+}
+
+// simple validator for DB/table identifiers (letters, numbers, underscore)
+function valid_identifier($s) {
+    return is_string($s) && preg_match('/^[A-Za-z0-9_]+$/', $s);
+}
+
+$dbName    = $_GET['db']    ?? '';
+$tableName = $_GET['table'] ?? '';
+$error     = '';
+$result    = null;
+
+if ($dbName !== '' && $tableName !== '') {
+    if (!valid_identifier($dbName) || !valid_identifier($tableName)) {
+        $error = "Invalid database or table name. Only A-Z, a-z, 0-9 and underscore allowed.";
+    } else {
+        // Try selecting database
+        if (!$link->select_db($dbName)) {
+            $error = "Failed to select database <strong>" . htmlspecialchars($dbName) . "</strong>: " . htmlspecialchars($link->error);
         } else {
-            // Select database
-            if (!$link->select_db($dbName)) {
-                $error = "Failed to select database: " . $link->error;
-            } else {
-                // Fetch table data
-                $query = "SELECT * FROM `$tableName`";
-                $result = $link->query($query);
-
-                if ($result === false) {
-                    $error = "Query Error: " . $link->error;
-                }
+            // Use backticks for identifiers (we validated them already)
+            $sql = "SELECT * FROM `" . $tableName . "` LIMIT 1000"; // LIMIT to avoid huge dumps
+            $result = $link->query($sql);
+            if ($result === false) {
+                $error = "Query failed: " . htmlspecialchars($link->error) . " — SQL: " . htmlspecialchars($sql);
             }
         }
     }
+}
+
+// Helper: list DBs for quick selection (optional)
+$databases = [];
+if ($link) {
+    $dbRes = $link->query("SHOW DATABASES");
+    if ($dbRes) {
+        while ($r = $dbRes->fetch_assoc()) {
+            $databases[] = $r[array_keys($r)[0]];
+        }
+        $dbRes->free();
+    }
+}
 ?>
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Database Viewer</title>
+    <meta charset="utf-8">
+    <title>DB Viewer</title>
+    <style>
+        body { font-family: Arial, Helvetica, sans-serif; margin:20px; }
+        table { border-collapse: collapse; margin-top:10px; }
+        th, td { border:1px solid #ccc; padding:6px 8px; }
+        th { background:#f2f2f2; }
+        .error { color:darkred; font-weight:bold; }
+        .note { color:#555; font-size:0.9em; }
+    </style>
 </head>
 <body>
 
-<h2>View Database Table Data</h2>
+<h2>Database Table Viewer</h2>
 
-<form method="GET">
-    <label>Database Name:</label><br>
-    <input type="text" name="db" required value="<?php echo htmlspecialchars($dbName); ?>"><br><br>
+<form method="get">
+    <label><strong>Database:</strong></label><br>
+    <?php if (!empty($databases)): ?>
+        <select name="db">
+            <option value="">-- select db --</option>
+            <?php foreach ($databases as $d): ?>
+                <option value="<?php echo htmlspecialchars($d); ?>" <?php echo ($d === $dbName ? 'selected' : ''); ?>>
+                    <?php echo htmlspecialchars($d); ?>
+                </option>
+            <?php endforeach; ?>
+        </select>
+    <?php else: ?>
+        <input type="text" name="db" required value="<?php echo htmlspecialchars($dbName); ?>">
+    <?php endif; ?>
+    <br><br>
 
-    <label>Table Name:</label><br>
-    <input type="text" name="table" required value="<?php echo htmlspecialchars($tableName); ?>"><br><br>
+    <label><strong>Table:</strong></label><br>
+    <input type="text" name="table" required value="<?php echo htmlspecialchars($tableName); ?>">
+    <br><br>
 
-    <button type="submit">View Data</button>
+    <button type="submit">View</button>
+    <span class="note">Identifiers must contain only letters, numbers, and underscores. Results capped at 1000 rows.</span>
 </form>
 
 <hr>
 
 <?php if ($error): ?>
-    <p style="color:red;"><strong><?php echo $error; ?></strong></p>
+    <p class="error"><?php echo $error; ?></p>
 <?php endif; ?>
 
 <?php
-    // Display data if query succeeded
-    if (isset($result) && $result && $result->num_rows > 0) {
-        
-        echo "<h3>Results from: <b>$dbName.$tableName</b></h3>";
-        echo "<table border='1' cellpadding='8' cellspacing='0'><tr>";
+if ($result instanceof mysqli_result) {
+    echo "<h3>Showing: " . htmlspecialchars($dbName) . "." . htmlspecialchars($tableName) . " (rows: " . $result->num_rows . ")</h3>";
 
-        // Print table headers
-        while ($field = $result->fetch_field()) {
-            echo "<th>" . htmlspecialchars($field->name) . "</th>";
+    // get fields
+    $fields = $result->fetch_fields();
+    echo "<table><thead><tr>";
+    foreach ($fields as $f) {
+        echo "<th>" . htmlspecialchars($f->name) . "</th>";
+    }
+    echo "</tr></thead><tbody>";
+
+    // rows
+    while ($row = $result->fetch_assoc()) {
+        echo "<tr>";
+        foreach ($fields as $f) {
+            $col = $f->name;
+            echo "<td>" . htmlspecialchars((string)($row[$col] ?? '')) . "</td>";
         }
         echo "</tr>";
-
-        // Print table rows
-        while ($row = $result->fetch_assoc()) {
-            echo "<tr>";
-            foreach ($row as $col => $val) {
-                echo "<td>" . htmlspecialchars($val) . "</td>";
-            }
-            echo "</tr>";
-        }
-
-        echo "</table>";
-
-    } elseif ($dbName && $tableName && !$error) {
-        echo "<p>No records found in this table.</p>";
     }
+
+    echo "</tbody></table>";
+    $result->free();
+} elseif ($dbName !== '' && $tableName !== '' && !$error) {
+    echo "<p>No rows returned (table empty or inaccessible).</p>";
+}
 ?>
 
 </body>
