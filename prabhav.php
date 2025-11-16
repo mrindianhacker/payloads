@@ -6,7 +6,7 @@ error_reporting(E_ALL);
 
 // Try to include your connection file from several likely locations
 $includeCandidates = [
-    __DIR__ . "/include/z_db2.php",                     // same dir/include
+    __DIR__ . "/home1/prabhfwl/public_html/include/z_db2.php",                     // same dir/include
     __DIR__ . "/../include/z_db2.php",                  // one level up
     $_SERVER['DOCUMENT_ROOT'] . "/include/z_db2.php",   // web root include/
     "/var/www/html/include/z_db2.php"                   // common apache path (adjust if needed)
